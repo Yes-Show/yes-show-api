@@ -49,3 +49,20 @@ class AppointmentRead(BaseModel):
 
     class Config:
         from_attributes = True  # Updated from orm_mode = True for Pydantic v2
+
+
+class ScriptResponse(BaseModel):
+    script: Optional[str] = None
+
+
+class SummaryResponse(BaseModel):
+    summary: Optional[str] = None
+
+
+class MemoResponse(BaseModel):
+    memo: Optional[str] = None
+
+
+# 메모 업데이트용 스키마
+class MemoUpdate(BaseModel):
+    memo: str

@@ -4,7 +4,8 @@ from datetime import datetime
 
 from database import SessionLocal, engine, get_db
 from models import Patient, Appointment
-from schemas import PatientInfoCreate, PatientInfoOut, AppointmentRead, AppointmentCreate
+from schemas import (PatientInfoCreate, PatientInfoOut, AppointmentRead, AppointmentCreate, ScriptResponse,
+                     SummaryResponse, MemoResponse, MemoUpdate)
 
 # DB 테이블 자동 생성 (이미 있으면 아무 일도 안 함)
 from database import Base
@@ -80,3 +81,64 @@ def search_appointments_by_name(name: str, db: Session = Depends(get_db)):
     if not appointments:
         raise HTTPException(status_code=404, detail="검색 조건에 맞는 예약을 찾을 수 없습니다.")
     return appointments
+
+
+# 1. Script 텍스트 반환 API
+@app.get("/appointments/{appointment_id}/script", response_model=ScriptResponse, tags=["appointments"])
+def get_appointment_script(name: str, db: Session = Depends(get_db)):
+    """
+    특정 예약의 script 필드를 반환합니다.
+    """
+    appointment = db.query(Appointment).filter(Appointment.name == name).all()
+    if not appointment:
+        raise HTTPException(status_code=404, detail="예약을 찾을 수 없습니다.")
+
+    return {"script": appointment.script}
+
+
+# 2. Summary 텍스트 반환 API
+@app.get("/appointments/{appointment_id}/summary", response_model=SummaryResponse, tags=["appointments"])
+def get_appointment_summary(name: str, db: Session = Depends(get_db)):
+    """
+    특정 예약의 summary 필드를 반환합니다.
+    """
+    appointment = db.query(Appointment).filter(Appointment.name == name).all()
+    if not appointment:
+        raise HTTPException(status_code=404, detail="예약을 찾을 수 없습니다.")
+
+    return {"summary": appointment.summary}
+
+
+# 3. Memo 텍스트 반환 API
+@app.get("/appointments/{appointment_id}/memo", response_model=MemoResponse, tags=["appointments"])
+def get_appointment_memo(name: str, db: Session = Depends(get_db)):
+    """
+    특정 예약의 memo 필드를 반환합니다.
+    """
+    appointment = db.query(Appointment).filter(Appointment.id == name).all()
+    if not appointment:
+        raise HTTPException(status_code=404, detail="예약을 찾을 수 없습니다.")
+
+    return {"memo": appointment.memo}
+
+
+# 4. Memo 텍스트 업데이트 API
+@app.put("/appointments/{appointment_id}/memo", response_model=MemoResponse, tags=["appointments"])
+def update_appointment_memo(
+        name: str,
+        memo_update: MemoUpdate,
+        db: Session = Depends(get_db)
+):
+    """
+    특정 예약의 memo 필드를 업데이트합니다.
+    """
+    appointment = db.query(Appointment).filter(Appointment.name == name).first()
+    if not appointment:
+        raise HTTPException(status_code=404, detail="예약을 찾을 수 없습니다.")
+
+    # memo 필드 업데이트
+    appointment.memo = memo_update.memo
+    db.commit()
+    db.refresh(appointment)
+
+    return {"memo": appointment.memo}
