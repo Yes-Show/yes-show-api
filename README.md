@@ -26,7 +26,7 @@ uvicorn main:app --reload --port 8080
 ```
 
 ### 4. 확인
-- **API 문서**: http://localhost:8000/docs
+- **API 문서**: http://localhost:8080/docs
 - **서버 상태**: http://localhost:8080/health
 
 ## 🧪 테스트 방법
