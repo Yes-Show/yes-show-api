@@ -17,7 +17,7 @@ pip install -r requirements.txt
 ### 2. 데이터베이스 설정
 ```bash
 # .env 파일 생성해서 DB 정보 입력
-DATABASE_URL=postgresql://username:password@localhost:5432/yes_show <- 정확한 URL은 혹시 테스트하실분 있으시면 개인톡으로 알려드립니다
+DATABASE_URL=postgresql://username:password@localhost:5432/yes_show
 ```
 
 ### 3. 서버 실행
