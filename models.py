@@ -1,83 +1,62 @@
-from sqlalchemy import Column, Integer, String, Text, Date, ForeignKey, Boolean, DateTime
+from sqlalchemy import Column, Integer, String, Text, Date, ForeignKey, Boolean, DateTime, Time
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from database import Base
 
 
-class Patient(Base):
-    __tablename__ = "patient"
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, nullable=False)
-    date_of_birth = Column(Date, nullable=False)  # 생년월일 (나이 계산용)
-    gender = Column(String(10), nullable=False)
-    national_id = Column(String(20), unique=True)
-    phone_number = Column(String(20))
-    email = Column(String(100))
-    address = Column(Text)
-    emergency_contact_name = Column(String(100))
-    emergency_contact_phone = Column(String(20))
-    blood_type = Column(String(3))
+class PatientType(Base):
+    """프론트엔드 PatientType 인터페이스에 맞춤"""
+    __tablename__ = "patients"
 
-    # 캐싱 컬럼 (뷰/트리거 등으로 갱신하거나, 필요시만 둬도 됨)
-    first_visit_date = Column(Date)
-    last_visit_date = Column(Date)
-    total_visit_count = Column(Integer)
-    last_prescription_id = Column(Integer, ForeignKey("prescription.id"))
+    patientId = Column("patient_id", Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False)
+    gender = Column(Integer, nullable=True)  # 1: 남성, 2: 여성
+    birthday = Column(Date, nullable=True)
+    neighbourhood = Column(String(255), nullable=True)
+    phone = Column(String(20), nullable=True)
+    email = Column(String(255), nullable=True)
+    emergencyContact = Column("emergency_contact", String(255), nullable=True)
+    emergencyPhone = Column("emergency_phone", String(20), nullable=True)
+    bloodType = Column("blood_type", String(10), nullable=True)
+    createdAt = Column("created_at", DateTime, default=datetime.utcnow, nullable=False)
+    updatedAt = Column("updated_at", DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    # 처방/방문기록 연결
-    prescriptions = relationship(
-        "Prescription",
-        back_populates="patient",
-        foreign_keys=lambda: [Prescription.patient_id]
-    )
-    visits = relationship("Visit", back_populates="patient")
-    last_prescription = relationship(
-        "Prescription",
-        foreign_keys=[last_prescription_id],
-    )
-    appointments = relationship("Appointment", back_populates="patient")
+    # 관계 설정
+    appointments = relationship("AppointmentType", back_populates="patient")
+    reminders = relationship("ReminderHistType", back_populates="patient")
 
 
-# Prescription, Visit 테이블도 아래와 같이 필요
+class AppointmentType(Base):
+    """프론트엔드 AppointmentType 인터페이스에 맞춤"""
+    __tablename__ = "appointments"
 
-class Prescription(Base):
-    __tablename__ = "prescription"
-    id = Column(Integer, primary_key=True, index=True)
-    patient_id = Column(Integer, ForeignKey("patient.id"), nullable=False)
-    prescribed_date = Column(Date, nullable=False)
-    medication_name = Column(String(100), nullable=False)
-    dosage = Column(String(50))
-    duration_days = Column(Integer)
-    notes = Column(Text)
-
-    patient = relationship(
-        "Patient",
-        back_populates="prescriptions",
-        foreign_keys=[patient_id]
-    )
-
-
-class Visit(Base):
-    __tablename__ = "visit"
-    id = Column(Integer, primary_key=True, index=True)
-    patient_id = Column(Integer, ForeignKey("patient.id"), nullable=False)
-    visit_date = Column(Date, nullable=False)
-    doctor_name = Column(String(100))
-    reason = Column(Text)
-
-    patient = relationship("Patient", back_populates="visits")
-
-
-class Appointment(Base):
-    __tablename__ = "appointment"
-    id = Column(Integer, primary_key=True, index=True)
-    patient_id = Column(Integer, ForeignKey("patient.id"))
-    name = Column(String(100), nullable=False, index=True)  # 추가된 name 필드
+    appointmentId = Column("appointment_id", Integer, primary_key=True, index=True)
+    patientId = Column("patient_id", Integer, ForeignKey("patients.patient_id"), nullable=False)
     memo = Column(Text, nullable=True)
     script = Column(Text, nullable=True)
     summary = Column(Text, nullable=True)
-    no_show = Column(Boolean, default=False)
-    appointment_day = Column(DateTime, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    noShow = Column("no_show", Boolean, default=False)
+    appointmentDate = Column("appointment_date", Date, nullable=False)
+    appointmentTime = Column("appointment_time", Time, nullable=True)
+    createdAt = Column("created_at", DateTime, default=datetime.utcnow, nullable=False)
+    updatedAt = Column("updated_at", DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    patient = relationship("Patient", back_populates="appointments")
+    # 관계 설정
+    patient = relationship("PatientType", back_populates="appointments")
+    reminders = relationship("ReminderHistType", back_populates="appointment")
+
+
+class ReminderHistType(Base):
+    """프론트엔드 ReminderHistType 인터페이스에 맞춤"""
+    __tablename__ = "reminder_history"
+
+    reminderHistId = Column("reminder_hist_id", Integer, primary_key=True, index=True)
+    patientId = Column("patient_id", Integer, ForeignKey("patients.patient_id"), nullable=False)
+    appointmentId = Column("appointment_id", Integer, ForeignKey("appointments.appointment_id"), nullable=False)
+    messageType = Column("message_type", String(50), nullable=False)  # 'SMS', 'EMAIL', 'CALL'
+    receivedAt = Column("received_at", DateTime, nullable=True)
+    createdAt = Column("created_at", DateTime, default=datetime.utcnow, nullable=False)
+
+    # 관계 설정
+    patient = relationship("PatientType", back_populates="reminders")
+    appointment = relationship("AppointmentType", back_populates="reminders")

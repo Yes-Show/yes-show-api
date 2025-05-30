@@ -1,144 +1,357 @@
-from fastapi import FastAPI, Depends, HTTPException
-from sqlalchemy.orm import Session
-from datetime import datetime
+from fastapi import FastAPI, Depends, HTTPException, File, UploadFile, Form, Query
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import func, desc, and_, or_
+from datetime import datetime, date, time
+from typing import List, Optional
+from pydantic import BaseModel
+import json
 
-from database import SessionLocal, engine, get_db
-from models import Patient, Appointment
-from schemas import (PatientInfoCreate, PatientInfoOut, AppointmentRead, AppointmentCreate, ScriptResponse,
-                     SummaryResponse, MemoResponse, MemoUpdate)
+from database import engine, get_db, Base
+from models import PatientType, AppointmentType, ReminderHistType
+from schemas import (
+    PatientTypeCreate, PatientTypeUpdate, PatientTypeOut,
+    AppointmentTypeCreate, AppointmentTypeUpdate, AppointmentTypeOut,
+    AppointmentWithPatientInfo, AppointmentListResponse,
+    ReminderHistTypeCreate, ReminderHistTypeOut,
+    AudioUploadResponse, ReminderSendResponse,
+    AppointmentFilterParams, NoShowUpdate
+)
 
-# DB 테이블 자동 생성 (이미 있으면 아무 일도 안 함)
-from database import Base
-
+# DB 테이블 자동 생성
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI()
+app = FastAPI(title="Yes-Show API", version="1.0.0")
+
+# CORS 설정 (프론트엔드 연결용)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # 프로덕션에서는 특정 도메인으로 제한
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
-# 설문조사 저장 API
-@app.post("/write_patient_info", response_model=PatientInfoOut)
-def create_survey(data: PatientInfoCreate, db: Session = Depends(get_db)):
-    patient_info = Patient(**data.dict())
-    db.add(patient_info)
-    db.commit()
-    db.refresh(patient_info)
-    return patient_info
+# =============================================================================
+# 1. 환자(Patient) API - 프론트엔드 요구사항 맞춤
+# =============================================================================
 
-
-# 고객 이름 검색 API
-@app.get("/get_patient_name", response_model=list[PatientInfoOut])
-def get_patient_name(name: str, db: Session = Depends(get_db)):
-    results = db.query(Patient).filter(Patient.name == name).all()
-    if not results:
-        raise HTTPException(status_code=404, detail="환자 정보를 찾을 수 없습니다.")
-    return results
-
-
-@app.post("/appointments", response_model=AppointmentRead)
-def create_appointment(
-        payload: AppointmentCreate,
-        db: Session = Depends(get_db),
-):
-    # 1) patient_id 유효성 검사 (옵션)
-    patient = db.query(Patient).filter(Patient.id == payload.patient_id).first()
+@app.get("/patient/name/{name}", response_model=PatientTypeOut, tags=["patient"])
+def get_patient_by_name(name: str, db: Session = Depends(get_db)):
+    """환자 이름으로 환자 정보 조회"""
+    patient = db.query(PatientType).filter(PatientType.name == name).first()
     if not patient:
-        raise HTTPException(status_code=404, detail="등록되지 않은 환자입니다.")
-
-    # 2) 새 Appointment 객체 생성
-    new_appt = Appointment(
-        patient_id=payload.patient_id,
-        name=payload.name,  # 이름 설정
-        memo=payload.memo,
-        script=payload.script,
-        summary=payload.summary,
-        appointment_day=payload.appointment_day or datetime.utcnow(),
-        created_at=datetime.utcnow()
-    )
-    db.add(new_appt)
-    db.commit()
-    db.refresh(new_appt)
-
-    return new_appt
+        raise HTTPException(status_code=404, detail="Patient not found")
+    return patient
 
 
-@app.get("/appointments/by-name/{name}", response_model=list[AppointmentRead])
-def get_appointments_by_name(name: str, db: Session = Depends(get_db)):
-    """이름으로 예약 검색"""
-    appointments = db.query(Appointment).filter(Appointment.name == name).all()
-    if not appointments:
-        raise HTTPException(status_code=404, detail="해당 이름의 예약을 찾을 수 없습니다.")
-    return appointments
-
-
-@app.get("/appointments/by-name", response_model=list[AppointmentRead])
-def search_appointments_by_name(name: str, db: Session = Depends(get_db)):
-    """이름 일부로 예약 검색 (부분 일치)"""
-    # 이름에 검색어가 포함된 모든 예약 검색 (대소문자 구분 없음)
-    appointments = db.query(Appointment).filter(
-        Appointment.name.ilike(f"%{name}%")
+@app.get("/patient/search", response_model=List[PatientTypeOut], tags=["patient"])
+def search_patients(query: str = Query(...), db: Session = Depends(get_db)):
+    """환자 검색 (이름, 전화번호 등으로)"""
+    patients = db.query(PatientType).filter(
+        or_(
+            PatientType.name.contains(query),
+            PatientType.phone.contains(query),
+            PatientType.email.contains(query)
+        )
     ).all()
 
-    if not appointments:
-        raise HTTPException(status_code=404, detail="검색 조건에 맞는 예약을 찾을 수 없습니다.")
+    if not patients:
+        raise HTTPException(status_code=404, detail="No patients found")
+    return patients
+
+
+# =============================================================================
+# 2. 예약(Appointment) API - 프론트엔드 요구사항 맞춤
+# =============================================================================
+
+@app.get("/appointment/patient/{patient_id}", response_model=List[AppointmentTypeOut], tags=["appointment"])
+def get_appointments_by_patient(patient_id: int, db: Session = Depends(get_db)):
+    """특정 환자의 모든 예약 내역 조회"""
+    # 환자 존재 확인
+    patient = db.query(PatientType).filter(PatientType.patientId == patient_id).first()
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    appointments = db.query(AppointmentType).filter(
+        AppointmentType.patientId == patient_id
+    ).order_by(desc(AppointmentType.appointmentDate)).all()
+
     return appointments
 
 
-# 1. Script 텍스트 반환 API
-@app.get("/appointments/{appointment_id}/script", response_model=ScriptResponse, tags=["appointments"])
-def get_appointment_script(name: str, db: Session = Depends(get_db)):
-    """
-    특정 예약의 script 필드를 반환합니다.
-    """
-    appointment = db.query(Appointment).filter(Appointment.name == name).all()
+@app.post("/appointment", response_model=AppointmentTypeOut, tags=["appointment"])
+def create_appointment(appointment: AppointmentTypeCreate, db: Session = Depends(get_db)):
+    """새로운 예약 생성"""
+    # 환자 존재 확인
+    patient = db.query(PatientType).filter(PatientType.patientId == appointment.patientId).first()
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    db_appointment = AppointmentType(**appointment.dict())
+    db.add(db_appointment)
+    db.commit()
+    db.refresh(db_appointment)
+    return db_appointment
+
+
+@app.get("/appointment/{appointment_id}/script", response_model=str, tags=["appointment"])
+def get_appointment_script(appointment_id: int, db: Session = Depends(get_db)):
+    """특정 예약의 스크립트(대화록) 조회 - 문자열로 직접 반환"""
+    appointment = db.query(AppointmentType).filter(AppointmentType.appointmentId == appointment_id).first()
     if not appointment:
-        raise HTTPException(status_code=404, detail="예약을 찾을 수 없습니다.")
+        raise HTTPException(status_code=404, detail="Appointment not found")
 
-    return {"script": appointment.script}
+    return appointment.script or ""
 
 
-# 2. Summary 텍스트 반환 API
-@app.get("/appointments/{appointment_id}/summary", response_model=SummaryResponse, tags=["appointments"])
-def get_appointment_summary(name: str, db: Session = Depends(get_db)):
-    """
-    특정 예약의 summary 필드를 반환합니다.
-    """
-    appointment = db.query(Appointment).filter(Appointment.name == name).all()
+@app.get("/appointment/{appointment_id}/summary", response_model=str, tags=["appointment"])
+def get_appointment_summary(appointment_id: int, db: Session = Depends(get_db)):
+    """특정 예약의 요약 정보 조회 - 문자열로 직접 반환"""
+    appointment = db.query(AppointmentType).filter(AppointmentType.appointmentId == appointment_id).first()
     if not appointment:
-        raise HTTPException(status_code=404, detail="예약을 찾을 수 없습니다.")
+        raise HTTPException(status_code=404, detail="Appointment not found")
 
-    return {"summary": appointment.summary}
+    return appointment.summary or ""
 
 
-# 3. Memo 텍스트 반환 API
-@app.get("/appointments/{appointment_id}/memo", response_model=MemoResponse, tags=["appointments"])
-def get_appointment_memo(name: str, db: Session = Depends(get_db)):
-    """
-    특정 예약의 memo 필드를 반환합니다.
-    """
-    appointment = db.query(Appointment).filter(Appointment.id == name).all()
+# =============================================================================
+# 3. 리마인더 API (간호사용) - 프론트엔드 요구사항 맞춤
+# =============================================================================
+
+@app.get("/reminder/patient/{patient_id}", response_model=List[ReminderHistTypeOut], tags=["reminder"])
+def get_patient_reminders(patient_id: int, db: Session = Depends(get_db)):
+    """특정 환자의 리마인더 히스토리 조회"""
+    # 환자 존재 확인
+    patient = db.query(PatientType).filter(PatientType.patientId == patient_id).first()
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    reminders = db.query(ReminderHistType).filter(
+        ReminderHistType.patientId == patient_id
+    ).order_by(desc(ReminderHistType.createdAt)).all()
+
+    return reminders
+
+
+class ReminderSendRequest(BaseModel):
+    patientId: int
+    appointmentId: int
+    messageType: str
+
+
+@app.post("/reminder/send", response_model=dict, tags=["reminder"])
+def send_reminder(request: ReminderSendRequest, db: Session = Depends(get_db)):
+    """리마인더 발송"""
+    # 예약 존재 확인
+    appointment = db.query(AppointmentType).filter(AppointmentType.appointmentId == request.appointmentId).first()
     if not appointment:
-        raise HTTPException(status_code=404, detail="예약을 찾을 수 없습니다.")
+        raise HTTPException(status_code=404, detail="Appointment not found")
 
-    return {"memo": appointment.memo}
+    # 환자 존재 확인
+    patient = db.query(PatientType).filter(PatientType.patientId == request.patientId).first()
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    # 실제 리마인더 발송 로직은 여기에 구현
+    # (SMS, 이메일, 전화 등)
+
+    # 리마인더 기록 저장
+    db_reminder = ReminderHistType(
+        patientId=request.patientId,
+        appointmentId=request.appointmentId,
+        messageType=request.messageType,
+        receivedAt=datetime.utcnow()  # 발송 즉시 수신으로 처리
+    )
+    db.add(db_reminder)
+    db.commit()
+
+    return {"success": True, "message": "Reminder sent successfully"}
 
 
-# 4. Memo 텍스트 업데이트 API
-@app.put("/appointments/{appointment_id}/memo", response_model=MemoResponse, tags=["appointments"])
-def update_appointment_memo(
-        name: str,
-        memo_update: MemoUpdate,
+# =============================================================================
+# 4. 음성 녹음 API - 프론트엔드 요구사항 맞춤
+# =============================================================================
+
+class RecordingUploadResponse(BaseModel):
+    transcription: str
+    summary: str
+    success: bool
+
+
+@app.post("/recording/upload", response_model=RecordingUploadResponse, tags=["recording"])
+async def upload_recording(
+        audioFile: UploadFile = File(...),
+        appointmentId: int = Form(...)
+):
+    """음성 파일 업로드 및 AI 텍스트 변환"""
+
+    # 파일 검증
+    if not audioFile.content_type or not audioFile.content_type.startswith('audio/'):
+        raise HTTPException(status_code=400, detail="Audio file required")
+
+    try:
+        # 파일 내용 읽기
+        audio_content = await audioFile.read()
+
+        # 여기서 실제 음성-텍스트 변환 API 호출
+        # (예: OpenAI Whisper, Google Speech-to-Text 등)
+
+        # 임시 응답 (실제 구현시 교체 필요)
+        transcription = "음성이 성공적으로 업로드되었습니다. 실제 STT 변환 기능 구현이 필요합니다."
+        summary = '{"주요 증상": "음성 파일 업로드 완료", "진단": "STT 구현 필요", "처방": "실제 AI 분석 구현 필요"}'
+
+        return RecordingUploadResponse(
+            transcription=transcription,
+            summary=summary,
+            success=True
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"File processing error: {str(e)}")
+
+
+# =============================================================================
+# 5. 대시보드 API (간호사용) - 프론트엔드 요구사항 맞춤
+# =============================================================================
+
+class TodayAppointmentResponse(BaseModel):
+    appointmentId: int
+    patientId: int
+    patientName: str
+    appointmentTime: Optional[str] = None
+    appointmentDate: str
+    noShow: bool
+    reminderCount: int
+    lastReminderReceived: bool
+
+
+@app.get("/dashboard/appointments/today", response_model=List[TodayAppointmentResponse], tags=["dashboard"])
+def get_today_appointments(db: Session = Depends(get_db)):
+    """오늘의 예약 현황"""
+    today = date.today()
+
+    # 예약과 환자 정보를 조인하여 가져오기
+    appointments_with_patients = db.query(
+        AppointmentType, PatientType.name
+    ).join(
+        PatientType, AppointmentType.patientId == PatientType.patientId
+    ).filter(
+        AppointmentType.appointmentDate == today
+    ).all()
+
+    result = []
+    for appointment, patient_name in appointments_with_patients:
+        # 리마인더 개수 계산
+        reminder_count = db.query(ReminderHistType).filter(
+            ReminderHistType.appointmentId == appointment.appointmentId
+        ).count()
+
+        # 최근 리마인더 수신 여부 확인
+        last_reminder = db.query(ReminderHistType).filter(
+            ReminderHistType.appointmentId == appointment.appointmentId
+        ).order_by(desc(ReminderHistType.createdAt)).first()
+
+        appointment_time = appointment.appointmentTime.strftime("%H:%M") if appointment.appointmentTime else None
+
+        appointment_data = TodayAppointmentResponse(
+            appointmentId=appointment.appointmentId,
+            patientId=appointment.patientId,
+            patientName=patient_name,
+            appointmentTime=appointment_time,
+            appointmentDate=appointment.appointmentDate.strftime("%Y-%m-%d"),
+            noShow=appointment.noShow,
+            reminderCount=reminder_count,
+            lastReminderReceived=last_reminder is not None and last_reminder.receivedAt is not None
+        )
+        result.append(appointment_data)
+
+    return result
+
+
+class NoShowRiskResponse(BaseModel):
+    riskPercentage: float
+    riskLevel: str
+
+
+@app.get("/dashboard/no-show-risk/{patient_id}", response_model=NoShowRiskResponse, tags=["dashboard"])
+def get_no_show_risk(patient_id: int, db: Session = Depends(get_db)):
+    """환자별 노쇼 위험도 계산"""
+    # 환자 존재 확인
+    patient = db.query(PatientType).filter(PatientType.patientId == patient_id).first()
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    # 해당 환자의 전체 예약 수와 노쇼 수 계산
+    total_appointments = db.query(AppointmentType).filter(
+        AppointmentType.patientId == patient_id
+    ).count()
+
+    no_show_count = db.query(AppointmentType).filter(
+        and_(
+            AppointmentType.patientId == patient_id,
+            AppointmentType.noShow == True
+        )
+    ).count()
+
+    # 위험도 계산
+    if total_appointments == 0:
+        risk_percentage = 0.0
+        risk_level = "unknown"
+    else:
+        risk_percentage = (no_show_count / total_appointments) * 100
+
+        if risk_percentage < 20:
+            risk_level = "low"
+        elif risk_percentage < 50:
+            risk_level = "medium"
+        else:
+            risk_level = "high"
+
+    return NoShowRiskResponse(
+        riskPercentage=round(risk_percentage, 1),
+        riskLevel=risk_level
+    )
+
+
+# =============================================================================
+# 기존 API들 (추가로 필요한 경우)
+# =============================================================================
+
+@app.put("/appointment/{appointment_id}/no-show", response_model=AppointmentTypeOut, tags=["appointment"])
+def update_no_show_status(
+        appointment_id: int,
+        no_show_update: NoShowUpdate,
         db: Session = Depends(get_db)
 ):
-    """
-    특정 예약의 memo 필드를 업데이트합니다.
-    """
-    appointment = db.query(Appointment).filter(Appointment.name == name).first()
+    """노쇼 상태 업데이트"""
+    appointment = db.query(AppointmentType).filter(AppointmentType.appointmentId == appointment_id).first()
     if not appointment:
-        raise HTTPException(status_code=404, detail="예약을 찾을 수 없습니다.")
+        raise HTTPException(status_code=404, detail="Appointment not found")
 
-    # memo 필드 업데이트
-    appointment.memo = memo_update.memo
+    appointment.noShow = no_show_update.noShow
     db.commit()
     db.refresh(appointment)
+    return appointment
 
-    return {"memo": appointment.memo}
+
+# =============================================================================
+# 헬스체크 및 기본 정보
+# =============================================================================
+
+@app.get("/", tags=["default"])
+def root():
+    """API 상태 확인"""
+    return {
+        "message": "Yes-Show API가 정상적으로 작동중입니다.",
+        "version": "1.0.0",
+        "timestamp": datetime.utcnow(),
+        "base_url": "http://localhost:8080"
+    }
+
+
+@app.get("/health", tags=["default"])
+def health_check():
+    """헬스체크"""
+    return {"status": "healthy", "timestamp": datetime.utcnow()}
