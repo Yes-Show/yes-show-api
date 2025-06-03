@@ -182,18 +182,18 @@ class RecordingUploadResponse(BaseModel):
 
 @app.post("/recording/upload", response_model=RecordingUploadResponse, tags=["recording"])
 async def upload_recording(
-        audioFile: UploadFile = File(...),
-        appointmentId: int = Form(...)
+        audio_file: UploadFile = File(...),
+        appointment_id: int = Form(...)
 ):
     """음성 파일 업로드 및 AI 텍스트 변환"""
 
     # 파일 검증
-    if not audioFile.content_type or not audioFile.content_type.startswith('audio/'):
+    if not audio_file.content_type or not audio_file.content_type.startswith('audio/'):
         raise HTTPException(status_code=400, detail="Audio file required")
 
     try:
         # 파일 내용 읽기
-        audio_content = await audioFile.read()
+        audio_content = await audio_file.read()
 
         # 여기서 실제 음성-텍스트 변환 API 호출
         # (예: OpenAI Whisper, Google Speech-to-Text 등)
