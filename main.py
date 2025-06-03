@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, desc, and_, or_
 from datetime import datetime, date, time
 from typing import List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import json
 
 from database import engine, get_db, Base
@@ -70,13 +70,13 @@ def search_patients(query: str = Query(...), db: Session = Depends(get_db)):
 def get_appointments_by_patient(patient_id: int, db: Session = Depends(get_db)):
     """특정 환자의 모든 예약 내역 조회"""
     # 환자 존재 확인
-    patient = db.query(PatientType).filter(PatientType.patientId == patient_id).first()
+    patient = db.query(PatientType).filter(PatientType.patient_id == patient_id).first()
     if not patient:
         raise HTTPException(status_code=404, detail="Patient not found")
 
     appointments = db.query(AppointmentType).filter(
-        AppointmentType.patientId == patient_id
-    ).order_by(desc(AppointmentType.appointmentDate)).all()
+        AppointmentType.patient_id == patient_id
+    ).order_by(desc(AppointmentType.appointment_date)).all()
 
     return appointments
 
@@ -85,7 +85,7 @@ def get_appointments_by_patient(patient_id: int, db: Session = Depends(get_db)):
 def create_appointment(appointment: AppointmentTypeCreate, db: Session = Depends(get_db)):
     """새로운 예약 생성"""
     # 환자 존재 확인
-    patient = db.query(PatientType).filter(PatientType.patientId == appointment.patientId).first()
+    patient = db.query(PatientType).filter(PatientType.patient_id == appointment.patient_id).first()
     if not patient:
         raise HTTPException(status_code=404, detail="Patient not found")
 
@@ -99,7 +99,7 @@ def create_appointment(appointment: AppointmentTypeCreate, db: Session = Depends
 @app.get("/appointment/{appointment_id}/script", response_model=str, tags=["appointment"])
 def get_appointment_script(appointment_id: int, db: Session = Depends(get_db)):
     """특정 예약의 스크립트(대화록) 조회 - 문자열로 직접 반환"""
-    appointment = db.query(AppointmentType).filter(AppointmentType.appointmentId == appointment_id).first()
+    appointment = db.query(AppointmentType).filter(AppointmentType.appointment_id == appointment_id).first()
     if not appointment:
         raise HTTPException(status_code=404, detail="Appointment not found")
 
@@ -109,7 +109,7 @@ def get_appointment_script(appointment_id: int, db: Session = Depends(get_db)):
 @app.get("/appointment/{appointment_id}/summary", response_model=str, tags=["appointment"])
 def get_appointment_summary(appointment_id: int, db: Session = Depends(get_db)):
     """특정 예약의 요약 정보 조회 - 문자열로 직접 반환"""
-    appointment = db.query(AppointmentType).filter(AppointmentType.appointmentId == appointment_id).first()
+    appointment = db.query(AppointmentType).filter(AppointmentType.appointment_id == appointment_id).first()
     if not appointment:
         raise HTTPException(status_code=404, detail="Appointment not found")
 
@@ -124,33 +124,33 @@ def get_appointment_summary(appointment_id: int, db: Session = Depends(get_db)):
 def get_patient_reminders(patient_id: int, db: Session = Depends(get_db)):
     """특정 환자의 리마인더 히스토리 조회"""
     # 환자 존재 확인
-    patient = db.query(PatientType).filter(PatientType.patientId == patient_id).first()
+    patient = db.query(PatientType).filter(PatientType.patient_id == patient_id).first()
     if not patient:
         raise HTTPException(status_code=404, detail="Patient not found")
 
     reminders = db.query(ReminderHistType).filter(
-        ReminderHistType.patientId == patient_id
-    ).order_by(desc(ReminderHistType.createdAt)).all()
+        ReminderHistType.patient_id == patient_id
+    ).order_by(desc(ReminderHistType.created_at)).all()
 
     return reminders
 
 
 class ReminderSendRequest(BaseModel):
-    patientId: int
-    appointmentId: int
-    messageType: str
+    patient_id: int = Field(alias="patientId")
+    appointment_id: int = Field(alias="appointmentId")
+    message_type: str = Field(alias="messageType")
 
 
 @app.post("/reminder/send", response_model=dict, tags=["reminder"])
 def send_reminder(request: ReminderSendRequest, db: Session = Depends(get_db)):
     """리마인더 발송"""
     # 예약 존재 확인
-    appointment = db.query(AppointmentType).filter(AppointmentType.appointmentId == request.appointmentId).first()
+    appointment = db.query(AppointmentType).filter(AppointmentType.appointment_id == request.appointment_id).first()
     if not appointment:
         raise HTTPException(status_code=404, detail="Appointment not found")
 
     # 환자 존재 확인
-    patient = db.query(PatientType).filter(PatientType.patientId == request.patientId).first()
+    patient = db.query(PatientType).filter(PatientType.patient_id == request.patient_id).first()
     if not patient:
         raise HTTPException(status_code=404, detail="Patient not found")
 
@@ -159,10 +159,10 @@ def send_reminder(request: ReminderSendRequest, db: Session = Depends(get_db)):
 
     # 리마인더 기록 저장
     db_reminder = ReminderHistType(
-        patientId=request.patientId,
-        appointmentId=request.appointmentId,
-        messageType=request.messageType,
-        receivedAt=datetime.utcnow()  # 발송 즉시 수신으로 처리
+        patient_id=request.patient_id,
+        appointment_id=request.appointment_id,
+        message_type=request.message_type,
+        received_at=datetime.utcnow()  # 발송 즉시 수신으로 처리
     )
     db.add(db_reminder)
     db.commit()
@@ -217,14 +217,14 @@ async def upload_recording(
 # =============================================================================
 
 class TodayAppointmentResponse(BaseModel):
-    appointmentId: int
-    patientId: int
-    patientName: str
-    appointmentTime: Optional[str] = None
-    appointmentDate: str
-    noShow: bool
-    reminderCount: int
-    lastReminderReceived: bool
+    appointment_id: int = Field(alias="appointmentId")
+    patient_id: int = Field(alias="patientId")
+    patient_name: str = Field(alias="patientName")
+    appointment_time: Optional[str] = Field(None, alias="appointmentTime")
+    appointment_date: str = Field(alias="appointmentDate")
+    no_show: bool = Field(alias="noShow")
+    reminder_count: int = Field(alias="reminderCount")
+    last_reminder_received: bool = Field(alias="lastReminderReceived")
 
 
 @app.get("/dashboard/appointments/today", response_model=List[TodayAppointmentResponse], tags=["dashboard"])
@@ -236,34 +236,34 @@ def get_today_appointments(db: Session = Depends(get_db)):
     appointments_with_patients = db.query(
         AppointmentType, PatientType.name
     ).join(
-        PatientType, AppointmentType.patientId == PatientType.patientId
+        PatientType, AppointmentType.patient_id == PatientType.patient_id
     ).filter(
-        AppointmentType.appointmentDate == today
+        AppointmentType.appointment_date == today
     ).all()
 
     result = []
     for appointment, patient_name in appointments_with_patients:
         # 리마인더 개수 계산
         reminder_count = db.query(ReminderHistType).filter(
-            ReminderHistType.appointmentId == appointment.appointmentId
+            ReminderHistType.appointment_id == appointment.appointment_id
         ).count()
 
         # 최근 리마인더 수신 여부 확인
         last_reminder = db.query(ReminderHistType).filter(
-            ReminderHistType.appointmentId == appointment.appointmentId
-        ).order_by(desc(ReminderHistType.createdAt)).first()
+            ReminderHistType.appointment_id == appointment.appointment_id
+        ).order_by(desc(ReminderHistType.created_at)).first()
 
-        appointment_time = appointment.appointmentTime.strftime("%H:%M") if appointment.appointmentTime else None
+        appointment_time = appointment.appointment_time.strftime("%H:%M") if appointment.appointment_time else None
 
         appointment_data = TodayAppointmentResponse(
-            appointmentId=appointment.appointmentId,
-            patientId=appointment.patientId,
+            appointmentId=appointment.appointment_id,
+            patientId=appointment.patient_id,
             patientName=patient_name,
             appointmentTime=appointment_time,
-            appointmentDate=appointment.appointmentDate.strftime("%Y-%m-%d"),
-            noShow=appointment.noShow,
+            appointmentDate=appointment.appointment_date.strftime("%Y-%m-%d"),
+            noShow=appointment.no_show,
             reminderCount=reminder_count,
-            lastReminderReceived=last_reminder is not None and last_reminder.receivedAt is not None
+            lastReminderReceived=last_reminder is not None and last_reminder.received_at is not None
         )
         result.append(appointment_data)
 
@@ -271,27 +271,27 @@ def get_today_appointments(db: Session = Depends(get_db)):
 
 
 class NoShowRiskResponse(BaseModel):
-    riskPercentage: float
-    riskLevel: str
+    risk_percentage: float = Field(alias="riskPercentage")
+    risk_level: str = Field(alias="riskLevel")
 
 
 @app.get("/dashboard/no-show-risk/{patient_id}", response_model=NoShowRiskResponse, tags=["dashboard"])
 def get_no_show_risk(patient_id: int, db: Session = Depends(get_db)):
     """환자별 노쇼 위험도 계산"""
     # 환자 존재 확인
-    patient = db.query(PatientType).filter(PatientType.patientId == patient_id).first()
+    patient = db.query(PatientType).filter(PatientType.patient_id == patient_id).first()
     if not patient:
         raise HTTPException(status_code=404, detail="Patient not found")
 
     # 해당 환자의 전체 예약 수와 노쇼 수 계산
     total_appointments = db.query(AppointmentType).filter(
-        AppointmentType.patientId == patient_id
+        AppointmentType.patient_id == patient_id
     ).count()
 
     no_show_count = db.query(AppointmentType).filter(
         and_(
-            AppointmentType.patientId == patient_id,
-            AppointmentType.noShow == True
+            AppointmentType.patient_id == patient_id,
+            AppointmentType.no_show == True
         )
     ).count()
 
@@ -326,11 +326,11 @@ def update_no_show_status(
         db: Session = Depends(get_db)
 ):
     """노쇼 상태 업데이트"""
-    appointment = db.query(AppointmentType).filter(AppointmentType.appointmentId == appointment_id).first()
+    appointment = db.query(AppointmentType).filter(AppointmentType.appointment_id == appointment_id).first()
     if not appointment:
         raise HTTPException(status_code=404, detail="Appointment not found")
 
-    appointment.noShow = no_show_update.noShow
+    appointment.no_show = no_show_update.no_show
     db.commit()
     db.refresh(appointment)
     return appointment
