@@ -13,7 +13,7 @@ pydantic==2.5.0
 # 환경변수 관리
 python-dotenv==1.0.0
 
-# HTTP 클라이언트
+# HTTP 클라이언트 (AI 서비스 호출용)
 httpx==0.25.2
 
 # 파일 업로드 처리
@@ -27,6 +27,5 @@ pytest==7.4.3
 pytest-asyncio==0.21.1
 black==23.11.0
 
-# CORS 지원 (이미 FastAPI에 포함되어 있음)
-# 추가적인 음성 처리 라이브러리 (필요시)
-# openai-whisper==20231117  # OpenAI Whisper 사용시
+# 추가된 패키지들
+aiofiles==23.2.1  # 비동기 파일 처리
