@@ -29,7 +29,7 @@ app = FastAPI(title="Yes-Show API", version="1.0.0")
 # CORS 설정 (프론트엔드 연결용)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # 개발용 Origin 목록
+    allow_origins=["*"],  # 개발용 Origin 목록
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
