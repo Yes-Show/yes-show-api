@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, Date, ForeignKey, Boolean, DateTime, Time
+from sqlalchemy import Column, Integer, String, Text, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from database import Base
@@ -11,15 +11,15 @@ class PatientType(Base):
     patient_id = Column("patient_id", Integer, primary_key=True, index=True)
     name = Column(String(255), nullable=False)
     gender = Column(Integer, nullable=True)  # 0: 남성, 1: 여성
-    birthday = Column(Date, nullable=True)
+    birthday = Column(String, nullable=True)
     neighbourhood = Column(String(255), nullable=True)
     phone = Column(String(20), nullable=True)
     email = Column(String(255), nullable=True)
     emergency_contact = Column("emergency_contact", String(255), nullable=True)
     emergency_phone = Column("emergency_phone", String(20), nullable=True)
     blood_type = Column("blood_type", String(10), nullable=True)
-    created_at = Column("created_at", DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column("updated_at", DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column("created_at", String, default=lambda: datetime.utcnow().isoformat(), nullable=False)
+    updated_at = Column("updated_at", String, default=lambda: datetime.utcnow().isoformat(), onupdate=lambda: datetime.utcnow().isoformat())
 
     # 관계 설정
     appointments = relationship("AppointmentType", back_populates="patient")
@@ -36,10 +36,10 @@ class AppointmentType(Base):
     script = Column(Text, nullable=True)
     summary = Column(Text, nullable=True)
     no_show = Column("no_show", Boolean, default=False)
-    appointment_date = Column("appointment_date", Date, nullable=False)
-    appointment_time = Column("appointment_time", Time, nullable=True)
-    created_at = Column("created_at", DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column("updated_at", DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    appointment_date = Column("appointment_date", String, nullable=False)
+    appointment_time = Column("appointment_time", String, nullable=True)
+    created_at = Column("created_at", String, default=lambda: datetime.utcnow().isoformat(), nullable=False)
+    updated_at = Column("updated_at", String, default=lambda: datetime.utcnow().isoformat(), onupdate=lambda: datetime.utcnow().isoformat())
 
     # 관계 설정
     patient = relationship("PatientType", back_populates="appointments")
@@ -54,8 +54,8 @@ class ReminderHistType(Base):
     patient_id = Column("patient_id", Integer, ForeignKey("patients.patient_id"), nullable=False)
     appointment_id = Column("appointment_id", Integer, ForeignKey("appointments.appointment_id"), nullable=False)
     message_type = Column("message_type", String(50), nullable=False)  # 'SMS', 'EMAIL', 'CALL'
-    received_at = Column("received_at", DateTime, nullable=True)
-    created_at = Column("created_at", DateTime, default=datetime.utcnow, nullable=False)
+    received_at = Column("received_at", String, nullable=True)
+    created_at = Column("created_at", String, default=lambda: datetime.utcnow().isoformat(), nullable=False)
 
     # 관계 설정
     patient = relationship("PatientType", back_populates="reminders")

@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends, HTTPException, File, UploadFile, Form, Que
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, desc, and_, or_
-from datetime import datetime, date, time
+from datetime import datetime, date
 from typing import List, Optional
 from pydantic import BaseModel, Field
 import json
@@ -29,7 +29,7 @@ app = FastAPI(title="Yes-Show API", version="1.0.0")
 # CORS 설정 (프론트엔드 연결용)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 프로덕션에서는 특정 도메인으로 제한
+    allow_origins=["http://localhost:3000"],  # 개발용 Origin 목록
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -191,7 +191,7 @@ class PatientDetailResponse(BaseModel):
     patient_id: int = Field(alias="patientId")
     name: str
     gender: Optional[int] = None
-    birthday: Optional[date] = None
+    birthday: Optional[str] = None
     neighbourhood: Optional[str] = None
     phone: Optional[str] = None
     email: Optional[str] = None
@@ -313,15 +313,25 @@ def get_appointments_by_patient(patient_id: int, db: Session = Depends(get_db)):
 @app.post("/appointment", response_model=AppointmentTypeOut, tags=["appointment"])
 def create_appointment(appointment: AppointmentTypeCreate, db: Session = Depends(get_db)):
     """새로운 예약 생성 (명세서 2번)"""
-    patient = db.query(PatientType).filter(PatientType.patient_id == appointment.patient_id).first()
-    if not patient:
-        raise HTTPException(status_code=404, detail="Patient not found")
+    try:
+        patient = db.query(PatientType).filter(PatientType.patient_id == appointment.patient_id).first()
+        if not patient:
+            raise HTTPException(status_code=404, detail="Patient not found")
 
-    db_appointment = AppointmentType(**appointment.dict())
-    db.add(db_appointment)
-    db.commit()
-    db.refresh(db_appointment)
-    return db_appointment
+        appointment_data = appointment.dict()
+        db_appointment = AppointmentType(**appointment_data)
+
+        db.add(db_appointment)
+        db.commit()
+        db.refresh(db_appointment)
+
+        return db_appointment
+    except Exception as e:
+        import traceback
+        print("Error in create_appointment:", e)
+        print(traceback.format_exc())
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Internal Server Error: {e}")
 
 
 @app.get("/appointment/{appointment_id}/script", response_model=str, tags=["appointment"])
@@ -383,7 +393,7 @@ def send_reminder(request: ReminderSendRequest, db: Session = Depends(get_db)):
         patient_id=request.patient_id,
         appointment_id=request.appointment_id,
         message_type=request.message_type,
-        received_at=datetime.utcnow()
+        received_at=datetime.utcnow().isoformat()
     )
     db.add(db_reminder)
     db.commit()
@@ -394,14 +404,14 @@ def send_reminder(request: ReminderSendRequest, db: Session = Depends(get_db)):
 @app.get("/dashboard/appointments/today", tags=["dashboard"])
 def get_today_appointments(db: Session = Depends(get_db)):
     """오늘의 예약 현황"""
-    today = date.today()
+    today_str = date.today().isoformat()
 
     appointments_with_patients = db.query(
         AppointmentType, PatientType.name
     ).join(
         PatientType, AppointmentType.patient_id == PatientType.patient_id
     ).filter(
-        AppointmentType.appointment_date == today
+        AppointmentType.appointment_date == today_str
     ).all()
 
     result = []
@@ -414,14 +424,12 @@ def get_today_appointments(db: Session = Depends(get_db)):
             ReminderHistType.appointment_id == appointment.appointment_id
         ).order_by(desc(ReminderHistType.created_at)).first()
 
-        appointment_time = appointment.appointment_time.strftime("%H:%M") if appointment.appointment_time else None
-
         appointment_data = {
             "appointmentId": appointment.appointment_id,
             "patientId": appointment.patient_id,
             "patientName": patient_name,
-            "appointmentTime": appointment_time,
-            "appointmentDate": appointment.appointment_date.strftime("%Y-%m-%d"),
+            "appointmentTime": appointment.appointment_time,
+            "appointmentDate": appointment.appointment_date,
             "noShow": appointment.no_show,
             "reminderCount": reminder_count,
             "lastReminderReceived": last_reminder is not None and last_reminder.received_at is not None
@@ -458,7 +466,7 @@ def root():
     return {
         "message": "Yes-Show API가 정상적으로 작동중입니다.",
         "version": "1.0.0",
-        "timestamp": datetime.utcnow(),
+        "timestamp": datetime.utcnow().isoformat(),
         "base_url": "http://localhost:8080",
         "ai_services": {
             "whisper_url": WHISPER_API_URL,
@@ -470,7 +478,7 @@ def root():
 @app.get("/health", tags=["default"])
 def health_check():
     """헬스체크"""
-    return {"status": "healthy", "timestamp": datetime.utcnow()}
+    return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
 
 
 # =============================================================================

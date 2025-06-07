@@ -1,5 +1,4 @@
 from pydantic import BaseModel, Field
-from datetime import date, datetime, time
 from typing import Optional, List
 
 
@@ -7,7 +6,7 @@ from typing import Optional, List
 class PatientTypeBase(BaseModel):
     name: str
     gender: Optional[int] = None  # 0: 남성, 1: 여성
-    birthday: Optional[date] = None
+    birthday: Optional[str] = None
     neighbourhood: Optional[str] = None
     phone: Optional[str] = None
     email: Optional[str] = None
@@ -23,7 +22,7 @@ class PatientTypeCreate(PatientTypeBase):
 class PatientTypeUpdate(BaseModel):
     name: Optional[str] = None
     gender: Optional[int] = None
-    birthday: Optional[date] = None
+    birthday: Optional[str] = None
     neighbourhood: Optional[str] = None
     phone: Optional[str] = None
     email: Optional[str] = None
@@ -34,7 +33,7 @@ class PatientTypeUpdate(BaseModel):
 
 class PatientTypeOut(PatientTypeBase):
     patient_id: int = Field(alias="patientId")
-    created_at: datetime = Field(alias="createdAt")
+    created_at: str = Field(alias="createdAt")
 
     class Config:
         from_attributes = True
@@ -48,8 +47,8 @@ class AppointmentTypeBase(BaseModel):
     script: Optional[str] = None
     summary: Optional[str] = None
     no_show: bool = Field(default=False, alias="noShow")
-    appointment_date: date = Field(alias="appointmentDate")
-    appointment_time: Optional[time] = Field(None, alias="appointmentTime")
+    appointment_date: str = Field(alias="appointmentDate")
+    appointment_time: Optional[str] = Field(None, alias="appointmentTime")
 
 
 class AppointmentTypeCreate(AppointmentTypeBase):
@@ -61,8 +60,8 @@ class AppointmentTypeUpdate(BaseModel):
     script: Optional[str] = None
     summary: Optional[str] = None
     no_show: Optional[bool] = Field(None, alias="noShow")
-    appointment_date: Optional[date] = Field(None, alias="appointmentDate")
-    appointment_time: Optional[time] = Field(None, alias="appointmentTime")
+    appointment_date: Optional[str] = Field(None, alias="appointmentDate")
+    appointment_time: Optional[str] = Field(None, alias="appointmentTime")
 
 
 class AppointmentTypeOut(AppointmentTypeBase):
@@ -85,7 +84,7 @@ class ReminderHistTypeBase(BaseModel):
     patient_id: int = Field(alias="patientId")
     appointment_id: int = Field(alias="appointmentId")
     message_type: str = Field(alias="messageType")  # 'SMS', 'EMAIL', 'CALL'
-    received_at: Optional[datetime] = Field(None, alias="receivedAt")
+    received_at: Optional[str] = Field(None, alias="receivedAt")
 
 
 class ReminderHistTypeCreate(ReminderHistTypeBase):
@@ -94,7 +93,7 @@ class ReminderHistTypeCreate(ReminderHistTypeBase):
 
 class ReminderHistTypeOut(ReminderHistTypeBase):
     reminder_hist_id: int = Field(alias="reminderHistId")
-    created_at: datetime = Field(alias="createdAt")
+    created_at: str = Field(alias="createdAt")
 
     class Config:
         from_attributes = True
@@ -110,7 +109,7 @@ class AudioUploadResponse(BaseModel):
 
 class ReminderSendResponse(BaseModel):
     success: bool
-    sent_at: datetime = Field(alias="sentAt")
+    sent_at: str = Field(alias="sentAt")
 
 
 class AppointmentListResponse(BaseModel):
@@ -119,7 +118,7 @@ class AppointmentListResponse(BaseModel):
 
 # 검색/필터링용 스키마들
 class AppointmentFilterParams(BaseModel):
-    date: Optional[date] = None
+    date: Optional[str] = None
     patient_name: Optional[str] = Field(None, alias="patientName")
     no_show: Optional[bool] = Field(None, alias="noShow")
 
